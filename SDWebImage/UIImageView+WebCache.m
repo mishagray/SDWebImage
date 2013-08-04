@@ -109,9 +109,16 @@ static char operationKey;
                                                         else {
                                                             self.image = placeholder;
                                                         }
-                                                        return TRUE;
+                                                        return FALSE;
                                                     }
-                                                    done:doneBlock];
+                                                    done:^(UIImage *image, SDImageCacheType cacheType) {
+                                                        if (image != nil) {
+                                                            self.image = image;
+                                                        }
+                                                        if (doneBlock) {
+                                                            doneBlock(image,cacheType);
+                                                        }
+                                                    }];
     
 }
 
