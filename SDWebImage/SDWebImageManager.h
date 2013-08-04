@@ -134,6 +134,13 @@ SDWebImageManager *manager = [SDWebImageManager sharedManager];
  */
 + (SDWebImageManager *)sharedManager;
 
+
+/**
+ *
+ * @return cacheKey for a given URL
+ */
+- (NSString *)cacheKeyForURL:(NSURL *)url;
+
 /**
  * Downloads the image at the given URL if not present in cache or return the cached version otherwise.
  *

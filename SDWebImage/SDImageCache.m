@@ -283,6 +283,72 @@ static const NSInteger kDefaultCacheMaxCacheAge = 60 * 60 * 24 * 7; // 1 week
     });
 }
 
+- (void)queryDiskCacheForBestImageInKeyArray:(NSArray *)keys
+                                    onMemory:(BOOL (^)(UIImage *image))memoryBlock
+                                        done:(void (^)(UIImage *image, SDImageCacheType cacheType))doneBlock
+{
+    
+    if (keys.count == 0)
+    {
+        doneBlock(nil, SDImageCacheTypeNone);
+        return;
+    }
+    NSMutableArray * keysToDiskCheck = [NSMutableArray arrayWithCapacity:keys.count];
+    
+    __block UIImage * bestImageFound = nil;
+    __block SDImageCacheType cacheTypeFound = SDImageCacheTypeNone;
+    [keys enumerateObjectsUsingBlock:^(NSString * key, NSUInteger idx, BOOL *stop) {
+        UIImage *image = [self imageFromMemoryCacheForKey:key];
+        if (image)
+        {
+            bestImageFound = image;
+            cacheTypeFound = SDImageCacheTypeMemory;
+            *stop = YES;
+        }
+        else {
+            [keysToDiskCheck addObject:key];
+        }
+    }];
+    
+    BOOL doDiskCheck = YES;
+    if (memoryBlock)
+    {
+        doDiskCheck = !memoryBlock(bestImageFound);
+    }
+    if (doDiskCheck && doneBlock && keysToDiskCheck.count > 0)
+    {
+    
+        dispatch_async(self.ioQueue, ^
+                       {
+                           @autoreleasepool
+                           {
+                               [keysToDiskCheck enumerateObjectsUsingBlock:^(NSString * key, NSUInteger idx, BOOL *stop) {
+                                   UIImage *diskImage = [self diskImageForKey:key];
+                                   if (diskImage)
+                                   {
+                                       CGFloat cost = diskImage.size.height * diskImage.size.width * diskImage.scale;
+                                       [self.memCache setObject:diskImage forKey:key cost:cost];
+                                       bestImageFound = diskImage;
+                                       cacheTypeFound = SDImageCacheTypeDisk;
+                                      *stop = YES;
+                                   }
+                               }];
+                               
+                               dispatch_async(dispatch_get_main_queue(), ^
+                                              {
+                                                  doneBlock(bestImageFound, cacheTypeFound);
+                                              });
+                           }
+                       });
+    }
+    else if (doneBlock)
+    {
+        doneBlock(bestImageFound, cacheTypeFound);
+    }
+    
+    
+}
+
 - (void)removeImageForKey:(NSString *)key
 {
     [self removeImageForKey:key fromDisk:YES];

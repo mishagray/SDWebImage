@@ -82,6 +82,40 @@ static char operationKey;
     }
 }
 
+- (void)setBestImageFromCacheWithUrls:(NSArray *)urls
+                     placeholderImage:(UIImage *)placeholder
+                                 done:(void (^)(UIImage *image, SDImageCacheType cacheType))doneBlock
+{
+    [self cancelCurrentImageLoad];
+    
+    SDWebImageManager * manager = SDWebImageManager.sharedManager;
+    
+    NSMutableArray * keysArray = [NSMutableArray arrayWithCapacity:urls];
+    
+    [urls enumerateObjectsUsingBlock:^(NSURL * url, NSUInteger idx, BOOL *stop) {
+        if ([url isKindOfClass:NSString.class])
+        {
+            url = [NSURL URLWithString:(NSString *)url];
+        }
+        NSString * key = [manager cacheKeyForURL:url];
+        [keysArray addObject:key];
+    }];
+    
+    [manager.imageCache queryDiskCacheForBestImageInKeyArray:keysArray
+                                                    onMemory:^BOOL(UIImage *image) {
+                                                        if (image != nil) {
+                                                            self.image = image;
+                                                        }
+                                                        else {
+                                                            self.image = placeholder;
+                                                        }
+                                                        return TRUE;
+                                                    }
+                                                    done:doneBlock];
+    
+}
+
+
 - (void)cancelCurrentImageLoad
 {
     // Cancel in progress downloader from queue

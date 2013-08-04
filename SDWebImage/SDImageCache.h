@@ -100,6 +100,18 @@ typedef enum SDImageCacheType SDImageCacheType;
  */
 - (void)queryDiskCacheForKey:(NSString *)key done:(void (^)(UIImage *image, SDImageCacheType cacheType))doneBlock;
 
+
+/**
+ * Query the disk cache asynchronously.
+ *
+ * @param keys an array of keys, with the first element being the "best" desired photo.  The last being the "worst"
+ * will call onMemory if an Image is found during the MemoryCheck, So that a "worse" image could be loaded as a placeholder.
+ * if memoryBlock returns TRUE, than the disk cache will also be checked for better images.
+ */
+- (void)queryDiskCacheForBestImageInKeyArray:(NSArray *)keys
+                                        onMemory:(BOOL (^)(UIImage *image))memoryBlock
+                                        done:(void (^)(UIImage *image, SDImageCacheType cacheType))doneBlock;
+
 /**
  * Query the memory cache synchronously.
  *
