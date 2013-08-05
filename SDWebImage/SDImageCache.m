@@ -310,12 +310,11 @@ static const NSInteger kDefaultCacheMaxCacheAge = 60 * 60 * 24 * 7; // 1 week
         }
     }];
     
-    BOOL doDiskCheck = YES;
     if (memoryBlock)
     {
-        doDiskCheck = !memoryBlock(bestImageFound);
+        memoryBlock(bestImageFound);
     }
-    if (doDiskCheck && doneBlock && keysToDiskCheck.count > 0)
+    if (doneBlock && keysToDiskCheck.count > 0)
     {
     
         dispatch_async(self.ioQueue, ^

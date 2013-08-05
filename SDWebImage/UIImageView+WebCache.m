@@ -109,7 +109,7 @@ static char operationKey;
                                                         else {
                                                             self.image = placeholder;
                                                         }
-                                                        return FALSE;
+                                                        return TRUE;
                                                     }
                                                     done:^(UIImage *image, SDImageCacheType cacheType) {
                                                         if (image != nil) {
