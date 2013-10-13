@@ -25,7 +25,9 @@ static const NSInteger kDefaultCacheMaxCacheAge = 60 * 60 * 24 * 7; // 1 week
 @end
 
 
-@implementation SDImageCache
+@implementation SDImageCache {
+    NSFileManager *_fileManager;
+}
 
 + (SDImageCache *)sharedImageCache
 {
@@ -60,6 +62,11 @@ static const NSInteger kDefaultCacheMaxCacheAge = 60 * 60 * 24 * 7; // 1 week
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
         _diskCachePath = [paths[0] stringByAppendingPathComponent:fullNamespace];
 
+        dispatch_sync(_ioQueue, ^
+        {
+            _fileManager = NSFileManager.new;
+        });
+        
 #if TARGET_OS_IPHONE
         // Subscribe to app events
         [[NSNotificationCenter defaultCenter] addObserver:self
@@ -70,6 +77,11 @@ static const NSInteger kDefaultCacheMaxCacheAge = 60 * 60 * 24 * 7; // 1 week
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(cleanDisk)
                                                      name:UIApplicationWillTerminateNotification
+                                                   object:nil];
+        
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(backgroundCleanDisk)
+                                                     name:UIApplicationDidEnterBackgroundNotification
                                                    object:nil];
 #endif
     }
@@ -179,6 +191,17 @@ static const NSInteger kDefaultCacheMaxCacheAge = 60 * 60 * 24 * 7; // 1 week
     [self storeImage:image imageData:nil forKey:key toDisk:toDisk];
 }
 
+- (BOOL)diskImageExistsWithKey:(NSString *)key
+{
+    __block BOOL exists = NO;
+    dispatch_sync(_ioQueue, ^
+    {
+        exists = [_fileManager fileExistsAtPath:[self defaultCachePathForKey:key]];
+    });
+    
+    return exists;
+}
+
 - (UIImage *)imageFromMemoryCacheForKey:(NSString *)key
 {
     return [self.memCache objectForKey:key];
@@ -246,14 +269,16 @@ static const NSInteger kDefaultCacheMaxCacheAge = 60 * 60 * 24 * 7; // 1 week
     return SDScaledImageForKey(key, image);
 }
 
-- (void)queryDiskCacheForKey:(NSString *)key done:(void (^)(UIImage *image, SDImageCacheType cacheType))doneBlock
+- (NSOperation *)queryDiskCacheForKey:(NSString *)key done:(void (^)(UIImage *image, SDImageCacheType cacheType))doneBlock
 {
-    if (!doneBlock) return;
+    NSOperation *operation = NSOperation.new;
+    
+    if (!doneBlock) return nil;
 
     if (!key)
     {
         doneBlock(nil, SDImageCacheTypeNone);
-        return;
+        return nil;
     }
 
     // First check the in-memory cache...
@@ -261,11 +286,16 @@ static const NSInteger kDefaultCacheMaxCacheAge = 60 * 60 * 24 * 7; // 1 week
     if (image)
     {
         doneBlock(image, SDImageCacheTypeMemory);
-        return;
+        return nil;
     }
 
     dispatch_async(self.ioQueue, ^
     {
+        if (operation.isCancelled)
+        {
+            return;
+        }
+        
         @autoreleasepool
         {
             UIImage *diskImage = [self diskImageForKey:key];
@@ -275,12 +305,14 @@ static const NSInteger kDefaultCacheMaxCacheAge = 60 * 60 * 24 * 7; // 1 week
                 [self.memCache setObject:diskImage forKey:key cost:cost];
             }
 
-            dispatch_async(dispatch_get_main_queue(), ^
+            dispatch_main_sync_safe(^
             {
                 doneBlock(diskImage, SDImageCacheTypeDisk);
             });
         }
     });
+    
+    return operation;
 }
 
 - (void)queryDiskCacheForBestImageInKeyArray:(NSArray *)keys
@@ -467,7 +499,29 @@ static const NSInteger kDefaultCacheMaxCacheAge = 60 * 60 * 24 * 7; // 1 week
     });
 }
 
--(unsigned long long)getSize
+- (void)backgroundCleanDisk
+{
+    UIApplication *application = [UIApplication sharedApplication];
+    __block UIBackgroundTaskIdentifier bgTask = [application beginBackgroundTaskWithExpirationHandler:^
+    {
+        // Clean up any unfinished task business by marking where you
+        // stopped or ending the task outright.
+        [application endBackgroundTask:bgTask];
+        bgTask = UIBackgroundTaskInvalid;
+    }];
+    
+    // Start the long-running task and return immediately.
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^
+    {
+        // Do the work associated with the task, preferably in chunks.
+        [self cleanDisk];
+        
+        [application endBackgroundTask:bgTask];
+        bgTask = UIBackgroundTaskInvalid;
+    });
+}
+
+- (unsigned long long)getSize
 {
     unsigned long long size = 0;
     NSDirectoryEnumerator *fileEnumerator = [[NSFileManager defaultManager] enumeratorAtPath:self.diskCachePath];
@@ -517,7 +571,7 @@ static const NSInteger kDefaultCacheMaxCacheAge = 60 * 60 * 24 * 7; // 1 week
 
         if (completionBlock)
         {
-            dispatch_async(dispatch_get_main_queue(), ^
+            dispatch_main_sync_safe(^
             {
                 completionBlock(fileCount, totalSize);
             });
