@@ -39,6 +39,9 @@
  */
 - (void)prefetchURLs:(NSArray *)urls;
 
+
+- (void)prefetchAdditionalURLs:(NSArray*)moreUrls;
+
 /**
  * Assign list of URLs to let SDWebImagePrefetcher to queue the prefetching,
  * currently one image is downloaded at a time,

@@ -12,11 +12,12 @@
 @interface SDWebImagePrefetcher ()
 
 @property (strong, nonatomic) SDWebImageManager *manager;
-@property (strong, nonatomic) NSArray *prefetchURLs;
+@property (strong, nonatomic) NSMutableArray *prefetchURLs;
 @property (assign, nonatomic) NSUInteger requestedCount;
 @property (assign, nonatomic) NSUInteger skippedCount;
 @property (assign, nonatomic) NSUInteger finishedCount;
 @property (assign, nonatomic) NSTimeInterval startedTime;
+@property (assign, nonatomic) NSUInteger activeCount;
 @property (copy, nonatomic) void (^completionBlock)(NSUInteger, NSUInteger);
 
 @end
@@ -38,6 +39,7 @@
         _manager = SDWebImageManager.new;
         _options = SDWebImageLowPriority;
         self.maxConcurrentDownloads = 3;
+        self.prefetchURLs = [NSMutableArray array];
     }
     return self;
 }
@@ -77,17 +79,36 @@
         {
             [self startPrefetchingAtIndex:self.requestedCount];
         }
-        else if (self.finishedCount == self.requestedCount)
-        {
-            [self reportStatus];
-            if (self.completionBlock)
+        else {
+            self.activeCount--;
+            if (self.finishedCount == self.requestedCount)
             {
-                self.completionBlock(self.finishedCount, self.skippedCount);
-                self.completionBlock = nil;
+                [self reportStatus];
+                if (self.completionBlock)
+                {
+                    self.completionBlock(self.finishedCount, self.skippedCount);
+                    self.completionBlock = nil;
+                }
+                [self.prefetchURLs removeAllObjects];
             }
         }
     }];
 }
+
+- (void)prefetchAdditionalURLs:(NSArray*)moreUrls
+{
+    if (self.prefetchURLs.count > 0) {
+        [self.prefetchURLs addObjectsFromArray:moreUrls];
+        while (self.activeCount < self.maxConcurrentDownloads) {
+            self.activeCount++;
+            [self startPrefetchingAtIndex:self.requestedCount];
+        }
+    }
+    else {
+        [self prefetchURLs:moreUrls];
+    }
+}
+
 
 - (void)reportStatus
 {
@@ -104,13 +125,15 @@
 {
     [self cancelPrefetching]; // Prevent duplicate prefetch request
     self.startedTime = CFAbsoluteTimeGetCurrent();
-    self.prefetchURLs = urls;
+    self.prefetchURLs = [urls mutableCopy];
     self.completionBlock = completionBlock;
 
+    self.activeCount = 0;
     // Starts prefetching from the very first image on the list with the max allowed concurrency
     NSUInteger listCount = self.prefetchURLs.count;
     for (NSUInteger i = 0; i < self.maxConcurrentDownloads && self.requestedCount < listCount; i++)
     {
+        self.activeCount++;
         [self startPrefetchingAtIndex:i];
     }
 }
